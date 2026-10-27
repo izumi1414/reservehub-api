@@ -39,3 +39,69 @@ export async function findSlotById(id: string, client?: PoolClient) {
 
   return result.rows[0];
 }
+
+export async function findAllSlots() {
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM reservation_slots
+    ORDER BY start_at ASC
+    `
+  );
+
+  return result.rows;
+}
+
+export async function insertSlot(
+  startAt: string,
+  endAt: string
+) {
+  const result = await pool.query(
+    `
+    INSERT INTO reservation_slots (start_at, end_at)
+    VALUES ($1, $2)
+    RETURNING *
+    `,
+    [startAt, endAt]
+  );
+
+  return result.rows[0];
+}
+
+export async function updateAbailableSlot(
+  id: string,
+  startAt: string,
+  endAt: string
+) {
+  const result = await pool.query(
+    `
+    UPDATE reservation_slots
+    SET start_at = $2, end_at = $3
+    WHERE id = $1
+      AND status = 'available'
+    RETURNING *
+    `,
+    [id, startAt, endAt]
+  )
+
+  return result.rows[0];
+}
+
+export async function deleteAvailableSlot(id: string){
+  const result = await pool.query(
+    `
+    DELETE FROM reservation_slots
+    WHERE id = $1
+      AND status = 'available'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM reservations
+        WHERE reservations.slot_id = reservation_slots.id
+      )
+    RETURNING id
+    `,
+    [id]
+  )
+
+  return result.rows[0];
+}

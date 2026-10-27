@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
-import { fetchSlotsByDate, fetchSlotById } from "../services/slot.service.js";
+import { fetchSlotsByDate, fetchSlotById, fetchAllSlot, registerSlot, editSlot, deleteSlotById } from "../services/slot.service.js";
+import { AppError } from "../errors/app.error.js";
 
 export async function getSlotsByDate(
   req: Request,
@@ -73,4 +74,150 @@ export async function getSlotById(
       message: 'Internal server error'
     })
   }
+}
+
+export async function getAllSlots(
+  req: Request,
+  res: Response
+) {
+  try {
+    const data = await fetchAllSlot();
+
+    return res.status(200).json(data);
+  } catch (error) {
+    console.error(error)
+
+    return res.status(500).json({
+      message: 'Internal Server error'
+    })
+  }
+}
+
+export async function postSlot(
+  req: Request,
+  res: Response
+) {
+  try {
+    const body = req.body;
+
+    if (!body || typeof body !== "object") {
+      return res.status(400).json({
+        message: "リクエストボディが正しくありません"
+      })
+    }
+
+    const { startAt, endAt } = body;
+
+    if (!startAt || typeof startAt !== "string") {
+      return res.status(400).json({
+        message: "startAtを正しく指定してください"
+      })
+    }
+    if (!endAt || typeof endAt !== "string") {
+      return res.status(400).json({
+        message: "endAtを正しく指定してください"
+      })
+    }
+
+    const data = await registerSlot(startAt, endAt);
+
+    return res.status(201).json(data);
+
+  } catch (error) {
+    console.error(error)
+
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: 'Internal Server error'
+    })
+  }
+}
+
+export async function patchSlot(
+  req: Request,
+  res: Response
+) {
+  try {
+    const id = req.params.id;
+    const body = req.body;
+
+    if (!id || typeof id !== "string") {
+      return res.status(400).json({
+        message: "idを正しく設定してください"
+      })
+    }
+
+    if (!body || typeof body !== "object") {
+      return res.status(400).json({
+        message: "リクエストボディが正しくありません"
+      })
+    }
+
+    const { startAt, endAt } = body;
+
+    if (!startAt || typeof startAt !== "string") {
+      return res.status(400).json({
+        message: "startAtを正しく指定してください"
+      })
+    }
+    if (!endAt || typeof endAt !== "string") {
+      return res.status(400).json({
+        message: "endAtを正しく指定してください"
+      })
+    }
+
+    const data = await editSlot(id, startAt, endAt);
+
+    return res.status(200).json(data);
+
+  } catch (error) {
+    console.error(error)
+
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: 'Internal Server error'
+    })
+  }
+}
+
+export async function deleteSlot(
+  req: Request,
+  res: Response
+) {
+  try {
+    const id = req.params.id;
+
+  if (!id || typeof id !== "string") {
+    return res.status(400).json({
+      message: "idを正しく設定してください"
+    })
+  }
+
+  await deleteSlotById(id);
+
+  return res.status(204).send();
+  } catch (error) {
+    console.error(error)
+
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: 'Internal Server error'
+    })
+  }
+
 }
