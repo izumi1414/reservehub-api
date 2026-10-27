@@ -23,6 +23,17 @@ CREATE TABLE IF NOT EXISTS reservations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ユーザーテーブル
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(20) NOT NULL DEFAULT 'user'
+    CHECK (role IN ('user', 'admin')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
 -- 確定済み予約は、1つの予約枠につき1件まで
 -- キャンセル済みの予約履歴は保持する
 CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_active_slot
