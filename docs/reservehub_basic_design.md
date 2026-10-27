@@ -34,6 +34,7 @@ APIである。バックエンドはExpressとTypeScript、データベースは
   F-05   予約詳細取得     予約IDで予約情報を取得する
   F-06   予約キャンセル   予約をキャンセルし、予約枠を再開放する
   F-07   月別予約集計     指定月の予約件数を集計する
+  F-08   予約枠管理       管理用APIで予約枠の一覧・詳細取得、作成・編集・削除を行う
 
 ## 4. API基本設計
 
@@ -41,6 +42,11 @@ APIである。バックエンドはExpressとTypeScript、データベースは
   -------- -------------------------------------- -------------------- --------------------
   GET      `/api/slots?date=YYYY-MM-DD`           指定日から7日間の予約枠一覧   200
   GET      `/api/slots/:id`                       予約枠詳細           200
+  GET      `/api/admin/slots`                     管理用予約枠一覧     200
+  GET      `/api/admin/slots/:id`                 管理用予約枠詳細     200
+  POST     `/api/admin/slots`                     予約枠作成           201
+  PATCH    `/api/admin/slots/:id`                 予約枠編集           200
+  DELETE   `/api/admin/slots/:id`                 予約枠削除           204
   POST     `/api/reservations`                    予約登録             201
   GET      `/api/reservations`                    予約一覧             200
   GET      `/api/reservations/:id`                予約詳細             200
@@ -128,7 +134,7 @@ APIである。バックエンドはExpressとTypeScript、データベースは
 以下は本バージョンでは実装しない。
 
 -   ユーザー登録・ログイン・JWT認証
--   管理者機能・ロールによる認可
+-   管理者・ユーザーの権限管理、ロールによる認可
 -   決済・返金
 -   メール通知
 -   自動テストの本格導入
