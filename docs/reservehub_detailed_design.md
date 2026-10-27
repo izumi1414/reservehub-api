@@ -286,6 +286,19 @@ WHERE created_at >= $1
 この集計は予約の作成月を基準にする。予約枠の利用月を基準に集計したい場合は、`reservation_slots.start_at`
 をJOINして範囲条件を設定する。仕様としてどちらを採用するかをAPI実装前に統一する。
 
+### 4.8 管理用予約枠API
+
+予約枠の管理を行うエンドポイント。作成・編集では予約枠の開始日時と終了日時を扱う。日時は `TIMESTAMPTZ` として保存し、終了日時は開始日時より後でなければならない。
+
+| Method | Endpoint | 概要 | 成功時 |
+| --- | --- | --- | --- |
+| GET | `/api/admin/slots` | 予約枠一覧を取得する | 200 |
+| GET | `/api/admin/slots/:id` | 予約枠IDで詳細を取得する | 200 |
+| POST | `/api/admin/slots` | 予約枠を作成する | 201 |
+| PATCH | `/api/admin/slots/:id` | 予約枠を編集する | 200 |
+| DELETE | `/api/admin/slots/:id` | 予約枠を削除する | 204 |
+
+
 ## 5. トランザクション実装規約
 
 Service層でトランザクションを管理する。
