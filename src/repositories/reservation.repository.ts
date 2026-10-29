@@ -71,6 +71,7 @@ export async function reserveAvailableSlot(
     SET status = 'reserved'
     WHERE id = $1
       AND status = 'available'
+      AND is_accepting = TRUE
     RETURNING id
     `,
     [slotId]

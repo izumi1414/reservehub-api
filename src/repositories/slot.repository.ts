@@ -71,17 +71,20 @@ export async function insertSlot(
 export async function updateAbailableSlot(
   id: string,
   startAt: string,
-  endAt: string
+  endAt: string,
+  isAccepting: boolean
 ) {
   const result = await pool.query(
     `
     UPDATE reservation_slots
-    SET start_at = $2, end_at = $3
+    SET
+      start_at = CASE WHEN status = 'available' THEN $2 ELSE start_at END,
+      end_at = CASE WHEN status = 'available' THEN $3 ELSE end_at END,
+      is_accepting = $4
     WHERE id = $1
-      AND status = 'available'
     RETURNING *
     `,
-    [id, startAt, endAt]
+    [id, startAt, endAt, isAccepting]
   )
 
   return result.rows[0];

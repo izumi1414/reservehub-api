@@ -158,7 +158,7 @@ export async function patchSlot(
       })
     }
 
-    const { startAt, endAt } = body;
+    const { startAt, endAt, isAccepting } = body;
 
     if (!startAt || typeof startAt !== "string") {
       return res.status(400).json({
@@ -170,8 +170,13 @@ export async function patchSlot(
         message: "endAtを正しく指定してください"
       })
     }
+    if (typeof isAccepting !== "boolean") {
+      return res.status(400).json({
+        message: "isAcceptingはtrueまたはfalseで指定してください"
+      })
+    }
 
-    const data = await editSlot(id, startAt, endAt);
+    const data = await editSlot(id, startAt, endAt, isAccepting);
 
     return res.status(200).json(data);
 

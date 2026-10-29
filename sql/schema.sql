@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS reservation_slots (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     start_at TIMESTAMPTZ NOT NULL,
     end_at TIMESTAMPTZ NOT NULL,
+    is_accepting BOOLEAN NOT NULL DEFAULT TRUE,
     status VARCHAR(20) NOT NULL DEFAULT 'available'
         CHECK (status IN ('available', 'reserved')),
     CONSTRAINT chk_reservation_slots_end_after_start
