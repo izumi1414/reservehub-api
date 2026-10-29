@@ -1,6 +1,6 @@
 
 import type { Request, Response } from "express";
-import { cancelReservation, fetchAllReservations, fetchReservationById, fetchReservations, registerReservation } from "../services/reservation.service.js";
+import { cancelReservation, fetchAllReservations, fetchReservation, fetchReservationById, fetchReservations, registerReservation } from "../services/reservation.service.js";
 import { ReservationError } from "../errors/reservation.error.js";
 
 function getAuthenticatedUserId(
@@ -25,6 +25,37 @@ export async function getAllReservations(
 ) {
   try {
     const data = await fetchAllReservations();
+
+    return res.status(200).json(data);
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}
+
+export async function getReservationDetail(
+  req: Request,
+  res: Response
+) {
+  try {
+    const id = req.params.id;
+
+    if (typeof id !== "string" || !id) {
+      return res.status(400).json({
+        message: "idを指定してください",
+      });
+    }
+
+    const data = await fetchReservation(id);
+
+    if (!data) {
+      return res.status(404).json({
+        message: "データが見つかりませんでした",
+      });
+    }
 
     return res.status(200).json(data);
   } catch (error) {

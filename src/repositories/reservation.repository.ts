@@ -12,6 +12,22 @@ export async function findAllReservations() {
   return result.rows;
 }
 
+export async function findReservation(
+  id: string,
+  client?: PoolClient
+) {
+  const queryable = client ?? pool;
+  const result = await queryable.query(
+    `
+    SELECT *
+    FROM reservations
+    WHERE id = $1
+    `,
+    [id]
+  )
+  return result.rows[0];
+}
+
 export async function findReservationsByUserId(
   userId: string
 ) {
