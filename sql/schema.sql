@@ -43,3 +43,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_active_slot
 -- 予約枠の開始日時による検索を高速化
 CREATE INDEX IF NOT EXISTS idx_reservation_slots_start_at
     ON reservation_slots(start_at);
+
+-- 予約テーブルにuser_idを追加
+ALTER TABLE reservations
+ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);

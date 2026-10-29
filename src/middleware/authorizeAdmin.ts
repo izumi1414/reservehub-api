@@ -6,7 +6,7 @@ export function authorizeAdmin(
   next: NextFunction
 ) {
   if(req.user?.role !== "admin") {
-    res.status(403).json({
+    return res.status(403).json({
       message: "この操作を行う権限がありません"
     })
   }

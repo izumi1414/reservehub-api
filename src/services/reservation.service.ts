@@ -1,6 +1,6 @@
 import { populate } from "dotenv";
 import { pool } from "../db/pool.js";
-import { cancelReservedSlot, findAllReservations, findReservationById, insertReservation, markReservationAsCancelled, reserveAvailableSlot } from "../repositories/reservation.repository.js";
+import { cancelReservedSlot, findAllReservations, findReservationById, findReservationsByUserId, insertReservation, markReservationAsCancelled, reserveAvailableSlot } from "../repositories/reservation.repository.js";
 import { findSlotById } from "../repositories/slot.repository.js";
 import { ReservationError } from "../errors/reservation.error.js";
 
@@ -8,14 +8,22 @@ export async function fetchAllReservations() {
   return findAllReservations();
 }
 
-export async function fetchReservationById(id: string) {
-  return findReservationById(id)
+export async function fetchReservations(userId: string) {
+  return findReservationsByUserId(userId)
+}
+
+export async function fetchReservationById(
+  id: string,
+  userId: string
+) {
+  return findReservationById(id, userId)
 }
 
 export async function registerReservation(
   slotId: string,
   customerName: string,
-  customerEmail: string
+  customerEmail: string,
+  userId: string
 ) {
   const client = await pool.connect();
   let transactionStarted = false;
@@ -46,7 +54,8 @@ export async function registerReservation(
       client,
       slotId,
       customerName,
-      customerEmail
+      customerEmail,
+      userId
     );
 
     await client.query("COMMIT");
@@ -69,7 +78,8 @@ export async function registerReservation(
 }
 
 export async function cancelReservation(
-  reservationId: string
+  reservationId: string,
+  userId: string
 ) {
   const client = await pool.connect();
   let transactionStarted = false;
@@ -78,7 +88,7 @@ export async function cancelReservation(
     await client.query("BEGIN");
     transactionStarted = true;
 
-    const reservation = await findReservationById(reservationId, client);
+    const reservation = await findReservationById(reservationId, userId, client);
 
     if (!reservation) {
       throw new ReservationError(
@@ -94,7 +104,7 @@ export async function cancelReservation(
       );
     }
 
-    const cancelledReservation = await markReservationAsCancelled(client, reservationId);
+    const cancelledReservation = await markReservationAsCancelled(client, reservationId, userId);
 
     if (!cancelledReservation) {
       throw new ReservationError(

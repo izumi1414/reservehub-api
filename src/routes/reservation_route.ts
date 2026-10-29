@@ -1,11 +1,12 @@
 import { Router } from "express";
-import { getAllReservations, getReservationById, patchReservationCancellation, postReservation } from "../controllers/reservation.controller.js";
+import { getReservationById, getReservationsByUserId, patchReservationCancellation, postReservation } from "../controllers/reservation.controller.js";
+import { authenticateToken } from "../middleware/authenticateToken.js";
 
 const router = Router();
 
-router.get("/", getAllReservations);
-router.get("/:id", getReservationById);
-router.post("/", postReservation);
-router.patch("/:id/cancel", patchReservationCancellation)
+router.get("/", authenticateToken, getReservationsByUserId);
+router.get("/:id", authenticateToken, getReservationById);
+router.post("/", authenticateToken, postReservation);
+router.patch("/:id/cancel", authenticateToken, patchReservationCancellation)
 
 export default router;
