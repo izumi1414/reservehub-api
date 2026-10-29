@@ -1,11 +1,15 @@
 import { populate } from "dotenv";
 import { pool } from "../db/pool.js";
-import { cancelReservedSlot, findAllReservations, findReservationById, findReservationsByUserId, insertReservation, markReservationAsCancelled, reserveAvailableSlot } from "../repositories/reservation.repository.js";
+import { cancelReservedSlot, findAllReservations, findReservation, findReservationById, findReservationsByUserId, insertReservation, markReservationAsCancelled, reserveAvailableSlot } from "../repositories/reservation.repository.js";
 import { findSlotById } from "../repositories/slot.repository.js";
 import { ReservationError } from "../errors/reservation.error.js";
 
 export async function fetchAllReservations() {
   return findAllReservations();
+}
+
+export async function fetchReservation(id: string) {
+  return findReservation(id)
 }
 
 export async function fetchReservations(userId: string) {

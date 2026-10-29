@@ -13,7 +13,7 @@ app.use(express.json());
 app.use("/api/slots", slotRoutes)
 app.use("/api/reservations", reservationRoute)
 app.use("/api/reports", reportRoute)
-app.use("/api/admin/slots", adminRoute)
+app.use("/api/admin", adminRoute)
 app.use("/api/auth", authRoute)
 app.use("/api/users",userRoute)
 

@@ -50,7 +50,8 @@ export async function registerSlot(
 export async function editSlot(
   id: string,
   startAt: string,
-  endAt: string
+  endAt: string,
+  isAccepting: boolean
 ) {
   const validationError = validateSlotDates(startAt, endAt);
 
@@ -68,13 +69,28 @@ export async function editSlot(
   }
 
   if (slot.status === "reserved") {
-    throw new AppError(
-      "すでに予約されているため、予約枠の編集はできません",
-      409
-    )
+    const requestedStartAt = new Date(startAt).toISOString();
+    const requestedEndAt = new Date(endAt).toISOString();
+    const currentStartAt = new Date(slot.start_at).toISOString();
+    const currentEndAt = new Date(slot.end_at).toISOString();
+
+    if (
+      requestedStartAt !== currentStartAt ||
+      requestedEndAt !== currentEndAt
+    ) {
+      throw new AppError(
+        "すでに予約されているため、予約枠の日時は編集できません",
+        409
+      )
+    }
   }
 
-  const updateSlot = await updateAbailableSlot(id, startAt, endAt)
+  const updateSlot = await updateAbailableSlot(
+    id,
+    startAt,
+    endAt,
+    isAccepting
+  )
 
   if(!updateSlot) {
     throw new AppError(
