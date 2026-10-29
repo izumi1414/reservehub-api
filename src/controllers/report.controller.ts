@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { fetchMonthlyReport } from "../services/report.service.js";
+import { AppError } from "../errors/app.error.js";
 
 export async function getMonthlyReport(
   req: Request,
@@ -18,6 +19,12 @@ export async function getMonthlyReport(
     return res.status(200).json(data)
   } catch(error) {
     console.error(error);
+
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        message: error.message
+      });
+    }
 
     return res.status(500).json({
       message: "Internal server error",

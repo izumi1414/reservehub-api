@@ -1,9 +1,10 @@
+import { AppError } from "../errors/app.error.js";
 import { findMonthlyReport } from "../repositories/report.repository.js";
 
 
 export async function fetchMonthlyReport(month: string) {
   if (!/^\d{4}-\d{2}$/.test(month)) {
-    throw new Error("monthはYYYY-MMの形式で指定してください");
+    throw new AppError("monthはYYYY-MMの形式で指定してください", 400);
   }
 
   const [year, monthNumber] = month.split("-").map(Number);
@@ -14,7 +15,7 @@ export async function fetchMonthlyReport(month: string) {
     monthNumber < 1||
     monthNumber > 12
   ) {
-    throw new Error("正しい年月を指定してください");
+    throw new AppError("正しい年月を指定してください", 400);
   }
 
   const startAt = `${String(year).padStart(4, "0")}-${String(monthNumber).padStart(2,"0")}-01T00:00:00+09:00`;
