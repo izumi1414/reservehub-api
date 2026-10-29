@@ -1,7 +1,23 @@
 
 import type { Request, Response } from "express";
-import { cancelReservation, fetchAllReservations, fetchReservationById, registerReservation } from "../services/reservation.service.js";
+import { cancelReservation, fetchAllReservations, fetchReservationById, fetchReservations, registerReservation } from "../services/reservation.service.js";
 import { ReservationError } from "../errors/reservation.error.js";
+
+function getAuthenticatedUserId(
+  req: Request,
+  res: Response
+): string | null {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    res.status(401).json({
+      message: "認証が必要です",
+    });
+    return null;
+  }
+
+  return userId;
+}
 
 export async function getAllReservations(
   req: Request,
@@ -20,11 +36,40 @@ export async function getAllReservations(
   }
 }
 
+export async function getReservationsByUserId(
+  req: Request,
+  res: Response
+) {
+  try {
+    const userId = getAuthenticatedUserId(req, res);
+
+    if (!userId) {
+      return;
+    }
+
+    const data = await fetchReservations(userId);
+
+    return res.status(200).json(data);
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}
+
 export async function getReservationById(
   req: Request,
   res: Response
 ) {
   try {
+    const userId = getAuthenticatedUserId(req, res);
+
+    if (!userId) {
+      return;
+    }
+
     const id = req.params.id;
 
     if (typeof id !== "string" || !id) {
@@ -33,7 +78,7 @@ export async function getReservationById(
       });
     }
 
-    const data = await fetchReservationById(id);
+    const data = await fetchReservationById(id, userId);
 
     if (!data) {
       return res.status(404).json({
@@ -57,6 +102,12 @@ export async function postReservation(
   res: Response
 ) {
   try {
+    const userId = getAuthenticatedUserId(req, res);
+
+    if (!userId) {
+      return;
+    }
+
     const body = req.body;
 
     if (
@@ -76,7 +127,8 @@ export async function postReservation(
     const reservation = await registerReservation(
       body.slotId,
       body.customerName,
-      body.customerEmail
+      body.customerEmail,
+      userId
     );
 
     return res.status(201).json(reservation);
@@ -100,6 +152,12 @@ export async function patchReservationCancellation(
   res: Response
 ) {
   try {
+    const userId = getAuthenticatedUserId(req, res);
+
+    if (!userId) {
+      return;
+    }
+
     const id = req.params.id;
 
     if (typeof id !== "string" || !id) {
@@ -108,7 +166,7 @@ export async function patchReservationCancellation(
       });
     }
 
-    const cancelledReservation = await cancelReservation(id);
+    const cancelledReservation = await cancelReservation(id, userId);
 
     return res.status(200).json(cancelledReservation)
   } catch(error) {
