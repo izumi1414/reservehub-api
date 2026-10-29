@@ -6,7 +6,7 @@ import { getAllReservations } from "../controllers/reservation.controller.js";
 
 const router = Router();
 
-router.get("/", getAllSlots);
+router.get("/", authenticateToken, authorizeAdmin, getAllSlots);
 router.post("/", authenticateToken, authorizeAdmin, postSlot);
 router.patch("/:id", authenticateToken, authorizeAdmin, patchSlot);
 router.delete("/:id", authenticateToken, authorizeAdmin, deleteSlot);
