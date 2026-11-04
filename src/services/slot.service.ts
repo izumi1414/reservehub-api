@@ -1,4 +1,4 @@
-import { findSlotsByDate, findSlotById, findAllSlots, insertSlot, updateAbailableSlot, deleteAvailableSlot } from "../repositories/slot.repository.js";
+import { findSlotsByDate, findSlotById, findAllSlots, findOverlappingSlot, insertSlot, updateAbailableSlot, deleteAvailableSlot } from "../repositories/slot.repository.js";
 import { AppError } from "../errors/app.error.js";
 
 export async function fetchSlotsByDate(startAt: string) {
@@ -44,7 +44,30 @@ export async function registerSlot(
     throw new AppError(validationError, 400)
   }
 
-  return insertSlot(startAt, endAt);
+  const overlappingSlot = await findOverlappingSlot(startAt, endAt);
+  if (overlappingSlot) {
+    throw new AppError(
+      "指定した日時と重複する予約枠がすでに存在します",
+      409
+    )
+  }
+
+  try {
+    return await insertSlot(startAt, endAt);
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "23505"
+    ) {
+      throw new AppError(
+        "指定した日時と重複する予約枠がすでに存在します",
+        409
+      )
+    }
+    throw error;
+  }
 }
 
 export async function editSlot(
@@ -83,6 +106,18 @@ export async function editSlot(
         409
       )
     }
+  }
+
+  const overlappingSlot = await findOverlappingSlot(
+    startAt,
+    endAt,
+    id
+  );
+  if (overlappingSlot) {
+    throw new AppError(
+      "指定した日時と重複する予約枠がすでに存在します",
+      409
+    )
   }
 
   const updateSlot = await updateAbailableSlot(

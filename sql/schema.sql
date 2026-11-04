@@ -45,6 +45,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_active_slot
 CREATE INDEX IF NOT EXISTS idx_reservation_slots_start_at
     ON reservation_slots(start_at);
 
+-- 同じ開始日時・終了日時の予約枠を重複作成できないようにする
+CREATE UNIQUE INDEX IF NOT EXISTS uq_reservation_slots_datetime
+    ON reservation_slots(start_at, end_at);
+
 -- 予約テーブルにuser_idを追加
 ALTER TABLE reservations
 ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
