@@ -19,9 +19,20 @@ export async function findReservation(
   const queryable = client ?? pool;
   const result = await queryable.query(
     `
-    SELECT *
-    FROM reservations
-    WHERE id = $1
+    SELECT
+      r.id AS reservation_id,
+      r.slot_id,
+      r.customer_name,
+      r.customer_email,
+      r.user_id,
+      r.status,
+      r.created_at,
+      rs.start_at,
+      rs.end_at
+    FROM reservations r
+    INNER JOIN reservation_slots rs
+    ON r.slot_id = rs.id
+    WHERE r.id = $1
     `,
     [id]
   )
