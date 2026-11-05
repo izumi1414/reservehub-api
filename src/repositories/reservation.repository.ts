@@ -4,8 +4,19 @@ import type { PoolClient } from "pg";
 export async function findAllReservations() {
   const result = await pool.query(
     `
-    SELECT *
-    FROM reservations
+    SELECT
+      r.id AS reservation_id,
+      r.slot_id,
+      r.customer_name,
+      r.customer_email,
+      r.user_id,
+      r.status,
+      r.created_at,
+      rs.start_at,
+      rs.end_at
+    FROM reservations r
+    INNER JOIN reservation_slots rs
+    ON r.slot_id = rs.id
     ORDER BY created_at DESC
     `
   );
