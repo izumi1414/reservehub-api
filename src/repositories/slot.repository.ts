@@ -52,6 +52,37 @@ export async function findAllSlots() {
   return result.rows;
 }
 
+export async function findOverlappingSlot(
+  startAt: string,
+  endAt: string,
+  excludeId?: string
+) {
+  const result = excludeId
+    ? await pool.query(
+        `
+        SELECT *
+        FROM reservation_slots
+        WHERE id != $3
+          AND start_at < $2
+          AND end_at > $1
+        LIMIT 1
+        `,
+        [startAt, endAt, excludeId]
+      )
+    : await pool.query(
+        `
+        SELECT *
+        FROM reservation_slots
+        WHERE start_at < $2
+          AND end_at > $1
+        LIMIT 1
+        `,
+        [startAt, endAt]
+      );
+
+  return result.rows[0];
+}
+
 export async function insertSlot(
   startAt: string,
   endAt: string

@@ -476,13 +476,15 @@ GET /api/reservations
 ```json
 [
   {
-    "id": "661e8400-e29b-41d4-a716-446655440000",
+    "reservation_id": "661e8400-e29b-41d4-a716-446655440000",
     "slot_id": "550e8400-e29b-41d4-a716-446655440000",
     "customer_name": "予約 太郎",
     "customer_email": "taro@example.com",
+    "user_id": "771e8400-e29b-41d4-a716-446655440000",
     "status": "confirmed",
     "created_at": "2026-10-29T05:00:00.000Z",
-    "user_id": "771e8400-e29b-41d4-a716-446655440000"
+    "start_at": "2026-11-01T01:00:00.000Z",
+    "end_at": "2026-11-01T02:00:00.000Z"
   }
 ]
 ```
@@ -501,13 +503,15 @@ GET /api/reservations/:id
 
 ```json
 {
-  "id": "661e8400-e29b-41d4-a716-446655440000",
+  "reservation_id": "661e8400-e29b-41d4-a716-446655440000",
   "slot_id": "550e8400-e29b-41d4-a716-446655440000",
   "customer_name": "予約 太郎",
   "customer_email": "taro@example.com",
+  "user_id": "771e8400-e29b-41d4-a716-446655440000",
   "status": "confirmed",
   "created_at": "2026-10-29T05:00:00.000Z",
-  "user_id": "771e8400-e29b-41d4-a716-446655440000"
+  "start_at": "2026-11-01T01:00:00.000Z",
+  "end_at": "2026-11-01T02:00:00.000Z"
 }
 ```
 
@@ -781,7 +785,7 @@ GET /api/reports/monthly?month=2026-11
 - 対象期間は指定月の1日00:00から翌月1日00:00まで
 - タイムゾーンはシステム実装上 `+09:00` を基準
 - 件数は予約レコードの作成日時ではなくレポートAPIの実装に従って集計
-- `created_at` が対象期間にある予約を集計します
+- `reservation_slots.start_at` が対象期間にある予約を集計します
 
 主なエラー:
 

@@ -4,8 +4,19 @@ import type { PoolClient } from "pg";
 export async function findAllReservations() {
   const result = await pool.query(
     `
-    SELECT *
-    FROM reservations
+    SELECT
+      r.id AS reservation_id,
+      r.slot_id,
+      r.customer_name,
+      r.customer_email,
+      r.user_id,
+      r.status,
+      r.created_at,
+      rs.start_at,
+      rs.end_at
+    FROM reservations r
+    INNER JOIN reservation_slots rs
+    ON r.slot_id = rs.id
     ORDER BY created_at DESC
     `
   );
@@ -19,9 +30,20 @@ export async function findReservation(
   const queryable = client ?? pool;
   const result = await queryable.query(
     `
-    SELECT *
-    FROM reservations
-    WHERE id = $1
+    SELECT
+      r.id AS reservation_id,
+      r.slot_id,
+      r.customer_name,
+      r.customer_email,
+      r.user_id,
+      r.status,
+      r.created_at,
+      rs.start_at,
+      rs.end_at
+    FROM reservations r
+    INNER JOIN reservation_slots rs
+    ON r.slot_id = rs.id
+    WHERE r.id = $1
     `,
     [id]
   )
@@ -33,10 +55,21 @@ export async function findReservationsByUserId(
 ) {
   const result = await pool.query(
     `
-    SELECT *
-    FROM reservations
-    WHERE user_id = $1
-    ORDER BY created_at DESC
+    SELECT
+      r.id AS reservation_id,
+      r.slot_id,
+      r.customer_name,
+      r.customer_email,
+      r.user_id,
+      r.status,
+      r.created_at,
+      rs.start_at,
+      rs.end_at
+    FROM reservations r
+    INNER JOIN reservation_slots rs
+    ON r.slot_id = rs.id
+    WHERE r.user_id = $1
+    ORDER BY r.created_at DESC
     `,
     [userId]
   );
@@ -51,10 +84,21 @@ export async function findReservationById(
   const queryable = client ?? pool;
   const result = await queryable.query(
     `
-    SELECT *
-    FROM reservations
-    WHERE id = $1
-      AND user_id = $2
+    SELECT
+      r.id AS reservation_id,
+      r.slot_id,
+      r.customer_name,
+      r.customer_email,
+      r.user_id,
+      r.status,
+      r.created_at,
+      rs.start_at,
+      rs.end_at
+    FROM reservations r
+    INNER JOIN reservation_slots rs
+    ON r.slot_id = rs.id
+    WHERE r.id = $1
+      AND r.user_id = $2
     `,
     [id, userId]
   )
