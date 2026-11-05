@@ -283,8 +283,9 @@ WHERE created_at >= $1
   AND created_at < $2;
 ```
 
-この集計は予約の作成月を基準にする。予約枠の利用月を基準に集計したい場合は、`reservation_slots.start_at`
-をJOINして範囲条件を設定する。仕様としてどちらを採用するかをAPI実装前に統一する。
+この集計は予約枠の利用月を基準にする。`reservations.slot_id` を
+`reservation_slots.id` にJOINし、`reservation_slots.start_at`
+が月初以上、翌月月初未満の予約を集計する。
 
 ### 4.8 管理用予約枠API
 
