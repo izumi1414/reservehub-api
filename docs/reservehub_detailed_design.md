@@ -1,166 +1,289 @@
-# ReserveHub 詳細設計書
+# ReserveHub API 詳細設計書
 
--   文書種別：詳細設計書
--   対象システム：ReserveHub 予約管理API
--   バージョン：1.0
--   前提：基本設計書に準拠
+- 文書種別：詳細設計書
+- 対象システム：ReserveHub 予約管理API
+- 更新日：2026-11-09
+- 対象実装：`src/` および `sql/schema.sql`
+- 方針：本書は現在の実装に基づく。実装されていない仕様や将来案は、現行仕様として記載しない。
 
-## 1. ディレクトリ構成
+## 1. システム構成
 
-``` text
+### 1.1 ディレクトリ構成
+
+```text
 src/
 ├── app.ts
 ├── server.ts
 ├── db/
 │   └── pool.ts
 ├── routes/
-│   ├── slot.routes.ts
-│   ├── reservation.routes.ts
-│   └── report.routes.ts
+│   ├── auth_route.ts
+│   ├── user_route.ts
+│   ├── slot_route.ts
+│   ├── reservation_route.ts
+│   ├── admin_route.ts
+│   └── report_route.ts
+├── middleware/
+│   ├── authenticateToken.ts
+│   └── authorizeAdmin.ts
 ├── controllers/
+│   ├── auth.controller.ts
+│   ├── user.controller.ts
 │   ├── slot.controller.ts
 │   ├── reservation.controller.ts
 │   └── report.controller.ts
 ├── services/
+│   ├── auth.service.ts
+│   ├── user.service.ts
 │   ├── slot.service.ts
 │   ├── reservation.service.ts
 │   └── report.service.ts
 ├── repositories/
+│   ├── user.repository.ts
 │   ├── slot.repository.ts
 │   ├── reservation.repository.ts
 │   └── report.repository.ts
 ├── errors/
-│   └── reservation.errors.ts
-└── middlewares/
-    └── error.middleware.ts
+│   ├── app.error.ts
+│   └── reservation.error.ts
+└── types/
+    └── express.d.ts
 ```
 
-### 1.1 各層の責務
+### 1.2 レイヤー構成図（UMLクラス図）
 
-  層             責務
-  -------------- ------------------------------------------------
-  routes         HTTPメソッドとURLをControllerに割り当てる
-  controllers    パラメータ取得、入力形式の確認、HTTPレスポンス
-  services       業務ルール、トランザクション、業務エラー
-  repositories   SQL実行、DB結果の返却
-  middlewares    404・例外などの共通エラー処理
-  db             PostgreSQL接続プール
+```mermaid
+classDiagram
+    direction LR
+    class Client
+    class ExpressApp {
+      +mountRoutes()
+    }
+    class Routes {
+      +map HTTP method and path
+    }
+    class AuthenticateToken {
+      +verify JWT
+    }
+    class AuthorizeAdmin {
+      +check admin role
+    }
+    class Controllers {
+      +validate request
+      +write HTTP response
+    }
+    class Services {
+      +apply business rules
+      +manage transactions
+    }
+    class Repositories {
+      +execute SQL
+    }
+    class PostgreSQL
 
-## 2. 環境変数
-
-`.env` の例：
-
-``` dotenv
-PORT=3000
-DATABASE_URL=postgresql://app_user:your_password@localhost:5432/reservation_db
+    Client --> ExpressApp : HTTP/JSON
+    ExpressApp --> Routes
+    Routes --> AuthenticateToken : protected routes
+    AuthenticateToken --> AuthorizeAdmin : admin routes
+    Routes --> Controllers
+    AuthorizeAdmin --> Controllers
+    Controllers --> Services
+    Services --> Repositories
+    Repositories --> PostgreSQL
 ```
 
-実際のパスワードをGitにコミットしない。`.env` は `.gitignore`
-に追加し、`.env.example` には値の例だけを記載する。
+- `routes` はURL・HTTPメソッドとControllerを対応付け、必要な認証・管理者認可を設定する。
+- `controllers` はリクエスト値を検証し、Serviceの結果をHTTPレスポンスにする。
+- `services` は業務ルールを適用する。予約登録・キャンセルのトランザクションも管理する。
+- `repositories` はSQLを実行する。
+- `server.ts` はDB接続確認後にHTTPサーバーを起動する。
 
-`pool.ts` では `DATABASE_URL` を使用して `pg.Pool`
-を生成する。サーバー起動時に `SELECT 1` などで接続を確認する。
+## 2. 実行環境と設定
 
-## 3. データベース詳細設計
+| 環境変数 | 必須 | 用途 |
+| --- | --- | --- |
+| `PORT` | 任意 | 待受ポート。未設定時は `3000` |
+| `DATABASE_URL` | 必須 | PostgreSQL接続文字列 |
+| `JWT_SECRET` | 必須 | JWTの署名・検証に使う秘密鍵 |
+| `NODE_ENV` | 任意 | `production`時のCORS既定動作を切り替える |
+| `CORS_ORIGIN` | 任意 | 許可するオリジン。複数指定はカンマ区切り |
 
-### 3.1 DDL
+`NODE_ENV` が `production` 以外で `CORS_ORIGIN` が未設定の場合、CORSは `http://localhost:5173` を許可する。productionで未設定の場合、ブラウザーからのオリジン付きリクエストは許可しない。CORSはブラウザーのクロスオリジン制御であり、APIの認証・認可の代替ではない。
 
-``` sql
-CREATE TABLE reservation_slots (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  start_at TIMESTAMPTZ NOT NULL,
-  end_at TIMESTAMPTZ NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'available'
-    CHECK (status IN ('available', 'reserved')),
-  CHECK (end_at > start_at)
-);
+起動時に `SELECT 1` を実行し、DB接続に失敗した場合はサーバーを起動しない。
 
-CREATE TABLE reservations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  slot_id UUID NOT NULL REFERENCES reservation_slots(id),
-  customer_name VARCHAR(100) NOT NULL,
-  customer_email VARCHAR(255) NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'confirmed'
-    CHECK (status IN ('confirmed', 'cancelled')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+## 3. データベース設計
 
-CREATE UNIQUE INDEX uq_reservations_active_slot
-  ON reservations(slot_id)
-  WHERE status = 'confirmed';
+### 3.1 ER図（UML）
 
-CREATE INDEX idx_reservation_slots_start_at
-  ON reservation_slots(start_at);
+```mermaid
+erDiagram
+    USERS o|--o{ RESERVATIONS : makes
+    RESERVATION_SLOTS ||--o{ RESERVATIONS : has
+
+    USERS {
+      UUID id PK
+      VARCHAR email UK
+      VARCHAR password_hash
+      VARCHAR role
+      TIMESTAMPTZ created_at
+      TIMESTAMPTZ deleted_at
+    }
+    RESERVATION_SLOTS {
+      UUID id PK
+      TIMESTAMPTZ start_at
+      TIMESTAMPTZ end_at
+      BOOLEAN is_accepting
+      VARCHAR status
+    }
+    RESERVATIONS {
+      UUID id PK
+      UUID slot_id FK
+      UUID user_id FK "nullable"
+      VARCHAR customer_name
+      VARCHAR customer_email
+      VARCHAR status
+      TIMESTAMPTZ created_at
+    }
 ```
 
-### 3.2 制約の意図
+### 3.2 テーブル・制約
 
--   `reservation_slots`
-    のCHECK制約：終了日時が開始日時より後であることを保証する。
--   ステータスのCHECK制約：許可した値以外を保存させない。
--   外部キー：存在しない予約枠に対する予約を防ぐ。
--   部分UNIQUEインデックス：同じ予約枠に `confirmed`
-    の予約が複数できないようにする。
--   インデックス：日付範囲で予約枠を検索する処理を補助する。
+`sql/schema.sql` の定義を示す。`reservations.user_id` は既存テーブルへの `ALTER TABLE` で追加され、現状はNULLを許可する。
+
+| テーブル | 主な列・ルール |
+| --- | --- |
+| `users` | `id` はUUID主キー、`email` は一意、`password_hash` にハッシュ化したパスワードを保存、`role` は `user` または `admin`、`deleted_at` は論理削除日時 |
+| `reservation_slots` | `start_at` / `end_at` は日時、`end_at > start_at`、`is_accepting` は受付可否、`status` は `available` または `reserved` |
+| `reservations` | `slot_id` は予約枠への外部キー、`user_id` はユーザーへの外部キー（NULL可）、`status` は `confirmed` または `cancelled` |
+
+- 確定済み予約は予約枠ごとに1件まで（`uq_reservations_active_slot` 部分UNIQUEインデックス）。
+- 予約枠の開始・終了日時の組み合わせは重複不可（`uq_reservation_slots_datetime`）。
+- 予約枠の開始日時検索用インデックスを持つ。
+- 予約レコードはキャンセル後も削除せず履歴として保持する。
 
 ### 3.3 状態遷移
 
 予約枠：
 
-``` text
-available ──予約成功──> reserved
-reserved  ──キャンセル成功──> available
+```text
+available --予約成功--> reserved
+reserved  --予約キャンセル成功--> available
 ```
 
 予約：
 
-``` text
-confirmed ──キャンセル成功──> cancelled
+```text
+confirmed --キャンセル成功--> cancelled
 ```
 
-予約レコードは削除せず、キャンセル履歴を残す。再予約時は同じ枠に新しい予約レコードを作成する。
+`is_accepting = false` の枠は、状態が `available` でも予約登録できない。
 
-## 4. API詳細設計
+## 4. 認証・認可
 
-共通事項： - ベースパス：`/api` - リクエスト／レスポンス：JSON -
-UUIDは文字列で受け付ける。 -
-不正なパラメータはDBに問い合わせる前に400を返す。 -
-認証は本スコープでは行わない。
+### 4.1 認証方式
 
-### 4.1 GET `/api/slots?date=YYYY-MM-DD`
+- 登録：メールアドレスを小文字化・前後空白除去して保存し、パスワードはbcrypt（cost 12）でハッシュ化する。パスワードは8文字以上、UTF-8で72バイト以下。
+- ログイン：JWTを発行する。有効期間は1時間、署名方式はHS256。JWTのsubject (`sub`) にユーザーID、claim `role` にロールを設定する。
+- 保護対象APIでは、AuthorizationヘッダーにBearer方式でJWTを指定する。
+- `authenticateToken` は署名・期限・subject・roleを検証し、`req.user` に `id` と `role` を設定する。
+- 管理者APIは認証に加えて `authorizeAdmin` による `role === "admin"` の確認を行う。
 
-`date` で指定した日を開始日として、その日を含む7日間の予約枠一覧を取得する。
+### 4.2 認可ルール
 
-レスポンス例：
+- ユーザー自身の予約一覧・詳細・キャンセルは、JWTから取得したユーザーIDで対象を限定する。
+- 予約作成時の `user_id` はJWTから設定し、リクエストボディのユーザーIDは使わない。
+- プロフィール、メールアドレス、パスワード、アカウント削除は `/users/me` 系APIで認証ユーザー自身に対して実行する。
+- 全予約の閲覧および予約枠の管理は管理者専用とする。
+- 予約枠の一般公開読み取りは認証不要。
 
-``` json
-[
-  {
-    "id": "00000000-0000-4000-8000-000000000001",
-    "startAt": "2026-10-25T01:00:00.000Z",
-    "endAt": "2026-10-25T02:00:00.000Z",
-    "status": "available"
-  }
-]
+### 4.3 認証処理シーケンス図（UML）
+
+```mermaid
+sequenceDiagram
+    actor Client
+    participant Route as Express Route
+    participant Auth as authenticateToken
+    participant Controller
+    Client->>Route: JWT付きAPIリクエスト
+    Route->>Auth: protected route
+    Auth->>Auth: verify signature, expiry, sub, role
+    alt invalid or missing token
+        Auth-->>Client: 401
+    else valid token
+        Auth->>Controller: req.user = { id, role }
+        Controller->>Controller: process request
+        Controller-->>Client: API response
+    end
 ```
 
-検索範囲は開始日の0時以上、開始日の7日後の0時未満とする。つまり、開始日を含む7日間を対象とし、終了境界は含めない。日付はアプリケーションで採用するタイムゾーン方針に従って範囲に変換する。日付が欠落・不正な場合は400。
+## 5. API仕様
 
-### 4.2 GET `/api/slots/:id`
+### 5.1 共通仕様
 
-指定されたUUIDの予約枠を取得する。
+- ベースパス：`/api`
+- リクエスト・レスポンス：JSON（204の場合はレスポンス本文なし）
+- 認証が必要なAPIでは、AuthorizationヘッダーにBearer方式でJWTを指定する。
+- 成功時のJSONはエンドポイントによりDB列名（snake_case）またはAPI用キー（camelCase）を返す。全API共通のレスポンスラッパーは設けていない。
+- ControllerはIDが空でないことを確認するが、UUID形式を一律に事前検証してはいない。無効な形式がDBエラーになった場合、該当処理によっては500となる。
+- エラー本文は主に `{ "message": "..." }` 形式。入力不備は400、認証失敗は401、権限不足は403、対象なしは404、業務上の競合は409、想定外エラーは500。
+- 一覧APIにページネーションは実装されていない。
 
--   成功：200
--   不正なUUID：400
--   存在しない枠：404
+### 5.2 エンドポイント一覧
 
-### 4.3 POST `/api/reservations`
+| Method | Path | 認証・権限 | 概要 |
+| --- | --- | --- | --- |
+| POST | `/api/auth/register` | 不要 | ユーザー登録 |
+| POST | `/api/auth/login` | 不要 | ログイン、JWT発行 |
+| GET | `/api/users/me` | user/admin | 自分のプロフィール取得 |
+| PATCH | `/api/users/me` | user/admin | 自分のメールアドレス変更 |
+| PATCH | `/api/users/me/password` | user/admin | 自分のパスワード変更 |
+| DELETE | `/api/users/me` | user/admin | 自分のアカウントを論理削除 |
+| GET | `/api/slots?date=YYYY-MM-DD` | 不要 | 指定日を起点とする7日間の枠一覧 |
+| GET | `/api/slots/:id` | 不要 | 予約枠詳細 |
+| GET | `/api/reservations` | user/admin | ログインユーザー自身の予約一覧 |
+| GET | `/api/reservations/:id` | user/admin | 自分の予約詳細 |
+| POST | `/api/reservations` | user/admin | 予約登録 |
+| PATCH | `/api/reservations/:id/cancel` | user/admin | 自分の予約をキャンセル |
+| GET | `/api/admin/slots` | admin | 全予約枠一覧 |
+| GET | `/api/admin/slots/:id` | admin | 予約枠詳細 |
+| POST | `/api/admin/slots` | admin | 予約枠作成 |
+| PATCH | `/api/admin/slots/:id` | admin | 予約枠更新 |
+| DELETE | `/api/admin/slots/:id` | admin | 予約枠削除 |
+| GET | `/api/admin/reservations` | admin | 全予約一覧 |
+| GET | `/api/admin/reservations/:id` | admin | 予約詳細 |
+| GET | `/api/reports/monthly?month=YYYY-MM` | admin | 月別予約集計 |
 
-予約を登録する。
+### 5.3 認証・ユーザーAPI
 
-リクエスト例：
+#### 登録・ログイン
 
-``` json
+- 登録リクエスト：`{ "email": "...", "password": "..." }`
+- 登録成功：201。応答は `{ "id", "email" }`。roleはDB既定値の `user`。
+- ログイン成功：200。応答は `{ "accessToken", "user": { "id", "email", "role" } }`。
+- 登録済みメールアドレスは409、形式不正は400、ログイン失敗は401。
+
+#### `/api/users/me` 系
+
+- プロフィール取得は `id`, `email`, `role`, `createdAt` を返す。
+- メール変更リクエスト：`{ "email": "..." }`。成功時200。
+- パスワード変更リクエスト：`{ "currentPassword": "...", "newPassword": "..." }`。成功時204。現在のパスワード不一致は401。
+- アカウント削除成功時204。ユーザー行を物理削除せず `deleted_at` を設定する。
+
+### 5.4 予約枠API
+
+- 一般向け一覧の `date` は `YYYY-MM-DD`。実在する日付でなければ400。Serviceで7日後の日付を計算し、開始日時が `[date, date+7日)` にある枠を検索する。明示的なアプリ共通タイムゾーン設定は行っていない。
+- 予約枠一覧・詳細は `reservation_slots` の行を返す（DB列名を含む）。詳細取得で対象がなければ404。
+- 管理者による作成リクエスト：`{ "startAt": "...", "endAt": "..." }`。日時の妥当性確認と既存枠との時間重複確認を行い、成功時201。
+- 管理者による更新リクエスト：`{ "startAt": "...", "endAt": "...", "isAccepting": true }`。成功時200。予約済み枠の日時は変更できないが、受付可否は更新できる。
+- 管理者による削除成功時204。予約済み、または予約履歴が存在する枠は削除できず409。
+- 存在しない枠の更新・削除は404、時間重複は409。
+
+### 5.5 予約API
+
+予約登録リクエスト：
+
+```json
 {
   "slotId": "00000000-0000-4000-8000-000000000001",
   "customerName": "山田花子",
@@ -168,252 +291,124 @@ UUIDは文字列で受け付ける。 -
 }
 ```
 
-入力チェック： - `slotId`：UUID形式 - `customerName`：必須、1〜100文字 -
-`customerEmail`：必須、最大255文字、基本的なメール形式 -
-不明なフィールドを許可するかどうかはAPI全体で統一する。
+- `slotId`、`customerName`、`customerEmail` は空でない文字列が必須。これ以外の形式・長さの検証はControllerでは行わない。
+- 成功時201。予約行（`reservations` のDB列名）を返す。`user_id` は認証済みユーザーID。
+- 枠が存在しない場合404。空き状態でない、または受付停止中の場合409。
+- 自分の予約一覧は `user_id` で絞り込み、作成日時の降順で返す。
+- 自分の予約詳細・キャンセルは予約IDと認証済みユーザーIDの両方で対象を検索する。他ユーザーの予約は対象なしとして404。
+- 管理者の予約一覧・詳細は `/api/admin/reservations` 系を使う。
+- キャンセル成功時200で、キャンセルされた予約のIDと枠IDを返す。予約が見つからない場合404、キャンセル済み等の競合は409。
 
-成功レスポンス：201 Created。登録した予約情報を返す。
+### 5.6 月別レポート
 
-エラー： - 入力不正：400 - 予約枠が存在しない：404 -
-予約枠が埋まっている：409 - 想定外のDBエラー：500
+- `month` は `YYYY-MM`。形式または月の値が不正な場合400。
+- 月の境界は日本標準時（`+09:00`）で計算する。
+- 予約枠の `start_at` が月初以上、翌月月初未満の予約を集計する。
+- 成功時200。`{ "month", "totalReservations", "confirmedReservations", "cancelledReservations" }` を返す。
 
-#### 予約登録処理フロー
+## 6. 主要処理シーケンス（UML）
 
-1.  Controllerでリクエストを検証する。
-2.  Serviceで `pool.connect()` により専用クライアントを取得する。
-3.  `BEGIN` を実行する。
-4.  次の条件付きUPDATEを実行して枠を確保する。
-5.  更新件数が0なら枠の状態を確認し、存在しなければ404、存在するが利用不可なら409を返すための業務エラーを送出する。
-6.  `reservations` に `confirmed` の予約をINSERTする。
-7.  `COMMIT` を実行する。
-8.  予約情報を返す。
-9.  例外時は `ROLLBACK` を試み、例外を上位層へ送る。
-10. `finally` で `client.release()` を実行する。
+### 6.1 予約登録
 
-枠確保SQL：
-
-``` sql
-UPDATE reservation_slots
-SET status = 'reserved'
-WHERE id = $1
-  AND status = 'available'
-RETURNING id;
+```mermaid
+sequenceDiagram
+    actor User
+    participant Route
+    participant Auth as authenticateToken
+    participant Controller
+    participant Service
+    participant DB as PostgreSQL
+    User->>Route: POST /api/reservations + JWT
+    Route->>Auth: verify JWT
+    Auth->>Controller: req.user.id
+    Controller->>Controller: validate slotId/name/email
+    Controller->>Service: registerReservation(..., userId)
+    Service->>DB: BEGIN
+    Service->>DB: UPDATE slot where available and accepting
+    alt slot unavailable
+        Service->>DB: check whether slot exists
+        Service->>DB: ROLLBACK
+        Service-->>User: 404 or 409
+    else slot reserved
+        Service->>DB: INSERT reservation with user_id
+        Service->>DB: COMMIT
+        Service-->>User: 201 reservation
+    end
 ```
 
-予約INSERT：
+### 6.2 予約キャンセル
 
-``` sql
-INSERT INTO reservations
-  (slot_id, customer_name, customer_email)
-VALUES ($1, $2, $3)
-RETURNING id, slot_id, customer_name, customer_email, status, created_at;
+```mermaid
+sequenceDiagram
+    actor User
+    participant Route
+    participant Auth as authenticateToken
+    participant Controller
+    participant Service
+    participant DB as PostgreSQL
+    User->>Route: PATCH /api/reservations/:id/cancel + JWT
+    Route->>Auth: verify JWT
+    Auth->>Controller: req.user.id
+    Controller->>Service: cancelReservation(reservationId, userId)
+    Service->>DB: BEGIN
+    Service->>DB: SELECT reservation by id and user_id
+    Service->>DB: UPDATE own confirmed reservation to cancelled
+    Service->>DB: UPDATE reserved slot to available
+    alt any operation fails
+        Service->>DB: ROLLBACK
+        Service-->>User: 404, 409, or 500
+    else all operations succeed
+        Service->>DB: COMMIT
+        Service-->>User: 200 cancelled reservation
+    end
 ```
 
-重要：同一トランザクション内の全SQLは同じ `PoolClient`
-で実行する。`pool.query()` と混在させない。
+## 7. トランザクション・競合制御
 
-### 4.4 GET `/api/reservations`
+予約登録・キャンセルはServiceで `pool.connect()` し、同一の `PoolClient` で `BEGIN`、更新、`COMMIT` を実行する。失敗時は `ROLLBACK` を試み、`finally` でクライアントを解放する。
 
-予約一覧を取得する。初期版では全件取得でよいが、データが増えた場合はページネーションを追加する。
+予約登録では `status = 'available'` かつ `is_accepting = TRUE` の枠だけを条件付きUPDATEする。更新に成功したリクエストのみ予約をINSERTする。DBの部分UNIQUEインデックスも確定済み予約の重複を防ぐ。
 
--   成功：200
--   DBエラー：500
+キャンセルではユーザーIDも条件に含めて予約を取得・更新し、同じトランザクション内で枠を `available` に戻す。現行実装では `SELECT ... FOR UPDATE` による行ロックは行っていない。
 
-認証がないため、学習用のデータのみを扱うこと。認証導入後はユーザーIDによる絞り込みを追加する。
+## 8. エラー応答
 
-### 4.5 GET `/api/reservations/:id`
+Controllerが例外を捕捉し、`AppError` または `ReservationError` の場合は保持するHTTPステータスとメッセージを返す。その他の例外はログに出力し、500を返す。共通のExpressエラーミドルウェアや統一されたエラーコード形式は実装されていない。
 
-予約IDで予約を1件取得する。
+| 状況 | HTTPステータス |
+| --- | --- |
+| 入力不備 | 400 |
+| 未認証・JWT不正 | 401 |
+| 管理者権限なし | 403 |
+| 対象データなし | 404 |
+| 予約枠の競合・操作不可 | 409 |
+| 想定外の例外 | 500 |
 
--   成功：200
--   不正なUUID：400
--   存在しない予約：404
+## 9. 手動確認項目
 
-### 4.6 PATCH `/api/reservations/:id/cancel`
+| No. | 確認内容 | 期待結果 |
+| --- | --- | --- |
+| 1 | トークンなしで保護APIにアクセス | 401 |
+| 2 | userロールで管理者APIにアクセス | 403 |
+| 3 | 日付形式・実在性が不正な枠一覧を要求 | 400 |
+| 4 | 存在しない予約枠を取得 | 404 |
+| 5 | 空き・受付中の枠を予約 | 201、予約行にログインユーザーのID |
+| 6 | 受付停止中または予約済み枠を予約 | 409 |
+| 7 | 他ユーザーの予約詳細・キャンセルを要求 | 404 |
+| 8 | 所有者が予約をキャンセル | 200、予約はcancelled、枠はavailable |
+| 9 | 同じ枠へ並行して予約 | 確定予約は1件のみ |
+| 10 | 月別レポートの形式不正な年月を要求 | 400 |
+| 11 | 自分のメールアドレスを変更 | 200 |
+| 12 | 正しい現在のパスワードでパスワード変更 | 204 |
+| 13 | アカウント削除後に同じユーザーでログイン | ログイン失敗 |
 
-予約をキャンセルし、予約枠を再開放する。
+## 10. 実装との差分・留意事項
 
-#### キャンセル処理フロー
-
-1.  Controllerで予約IDの形式を確認する。
-2.  Serviceでトランザクションを開始する。
-3.  対象予約を取得し、存在とステータスを確認する。必要に応じて
-    `SELECT ... FOR UPDATE` で対象行をロックする。
-4.  予約が存在しなければ404、すでにキャンセル済みなら409とする。
-5.  予約を `cancelled` に更新する。
-6.  対応する予約枠を `available` に更新する。
-7.  COMMITする。
-8.  途中で失敗した場合はROLLBACKし、最後にクライアントを解放する。
-
-予約更新SQL例：
-
-``` sql
-UPDATE reservations
-SET status = 'cancelled'
-WHERE id = $1
-  AND status = 'confirmed'
-RETURNING id, slot_id, status;
-```
-
-枠再開放SQL例：
-
-``` sql
-UPDATE reservation_slots
-SET status = 'available'
-WHERE id = $1
-  AND status = 'reserved'
-RETURNING id;
-```
-
-枠の更新件数が想定と異なる場合は、整合性エラーとしてロールバックする。実装時は同じ枠への予約・キャンセルが競合した場合も想定し、ロック取得順序を統一する。
-
-### 4.7 GET `/api/reports/monthly?month=YYYY-MM`
-
-指定月の予約件数を集計する。`month` は `YYYY-MM`
-形式とし、月初以上、翌月月初未満の範囲で集計する。
-
-集計例：
-
-``` sql
-SELECT
-  COUNT(*) FILTER (WHERE status = 'confirmed') AS confirmed_count,
-  COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled_count
-FROM reservations
-WHERE created_at >= $1
-  AND created_at < $2;
-```
-
-この集計は予約枠の利用月を基準にする。`reservations.slot_id` を
-`reservation_slots.id` にJOINし、`reservation_slots.start_at`
-が月初以上、翌月月初未満の予約を集計する。
-
-### 4.8 管理用予約枠API
-
-予約枠の管理を行うエンドポイント。作成・編集では予約枠の開始日時と終了日時を扱う。日時は `TIMESTAMPTZ` として保存し、終了日時は開始日時より後でなければならない。
-
-| Method | Endpoint | 概要 | 成功時 |
-| --- | --- | --- | --- |
-| GET | `/api/admin/slots` | 予約枠一覧を取得する | 200 |
-| GET | `/api/admin/slots/:id` | 予約枠IDで詳細を取得する | 200 |
-| POST | `/api/admin/slots` | 予約枠を作成する | 201 |
-| PATCH | `/api/admin/slots/:id` | 予約枠を編集する | 200 |
-| DELETE | `/api/admin/slots/:id` | 予約枠を削除する | 204 |
-
-
-## 5. トランザクション実装規約
-
-Service層でトランザクションを管理する。
-
-``` ts
-const client = await pool.connect();
-
-try {
-  await client.query("BEGIN");
-
-  // 同一clientで必要なSQLを実行する
-
-  await client.query("COMMIT");
-} catch (error) {
-  try {
-    await client.query("ROLLBACK");
-  } catch {
-    // ロールバック失敗は必要に応じてログに記録する
-  }
-  throw error;
-} finally {
-  client.release();
-}
-```
-
-上記は構造の例であり、実処理・エラー変換・ログ出力はServiceに合わせて実装する。
-
-### 5.1 二重予約防止
-
--   条件付きUPDATEにより、`available` の枠だけを確保する。
--   同時に複数リクエストが来ても、状態変更に成功したリクエストだけが予約INSERTへ進む。
--   部分UNIQUEインデックスを最終的なDB制約として利用する。
--   PostgreSQLの一意制約違反（SQLSTATE
-    `23505`）など、既知の競合を409へ変換する。
--   競合エラーを500として返さないように、エラー変換を設計する。
-
-### 5.2 ロールバック確認
-
-開発時に、枠のUPDATE後、予約INSERT前に意図的なエラーを発生させる。処理後に以下を確認する。
-
--   予約枠が `available` のままである。
--   予約レコードが追加されていない。
--   DBクライアントが解放されている。
-
-## 6. エラー設計
-
-業務エラー例： - `ReservationNotFoundError` - `SlotNotFoundError` -
-`ReservationConflictError` - `ValidationError`
-
-共通エラーミドルウェアはエラー種別に応じてHTTPステータスを決定し、想定外エラーは500にする。レスポンス例：
-
-``` json
-{
-  "error": {
-    "code": "RESERVATION_CONFLICT",
-    "message": "この予約枠は利用できません"
-  }
-}
-```
-
-本番相当の設定では、内部SQL・接続文字列・スタックトレースをクライアントに返さず、サーバーログに記録する。
-
-## 7. Repository関数案
-
-  Repository               関数例                   用途
-  ------------------------ ------------------------ --------------------
-  slot.repository          `findSlotsByDate`        指定日の枠一覧
-  slot.repository          `findSlotById`           枠詳細
-  slot.repository          `reserveAvailableSlot`   条件付きで枠を確保
-  slot.repository          `releaseReservedSlot`    予約枠を再開放
-  reservation.repository   `createReservation`      予約INSERT
-  reservation.repository   `findReservations`       予約一覧
-  reservation.repository   `findReservationById`    予約詳細
-  reservation.repository   `cancelReservation`      予約をキャンセル
-  report.repository        `getMonthlyReport`       月別集計
-
-トランザクション内で使うRepository関数には `PoolClient`
-を引数として渡す。トランザクションを使わない読み取り処理は、必要に応じて
-`Pool` を使ってよい。
-
-## 8. 手動確認項目（Postman）
-
-  No.   確認内容                           期待結果
-  ----- ---------------------------------- ----------------------------
-  1     指定日の枠一覧を取得               200、枠一覧
-  2     不正な日付を指定                   400
-  3     存在しない枠IDを取得               404
-  4     空き枠を予約                       201、予約情報
-  5     同じ枠を再予約                     409
-  6     不正な予約者情報で登録             400
-  7     予約詳細を取得                     200
-  8     存在しない予約IDを取得             404
-  9     予約をキャンセル                   200、`cancelled`
-  10    キャンセル後の枠を確認             `available`
-  11    キャンセル済み予約を再キャンセル   409
-  12    予約INSERT失敗を発生させる         枠更新がロールバックされる
-  13    同じ枠へ並行して予約を送る         成功は1件のみ、他は409相当
-  14    月別集計を取得                     200、件数が正しい
-
-## 9. 実装順序
-
-1.  PostgreSQL接続とテーブル作成
-2.  予約枠一覧・詳細API
-3.  予約一覧・詳細API
-4.  予約登録とトランザクション
-5.  予約キャンセルとトランザクション
-6.  月別集計
-7.  エラーミドルウェアの整理
-8.  Postmanで正常系・異常系・ロールバック・競合を確認
-
-## 10. 将来拡張時の注意
-
--   JWT認証を追加する際は `users`
-    テーブル、パスワードハッシュ、認証ミドルウェアを追加する。
--   認可を追加する際は、本人の予約かどうかをService層などで必ず検証する。フロントエンドだけで制御しない。
--   決済は外部サービスの状態とDB状態の整合性を考慮し、Webhook・冪等性・失敗時の補償処理を設計する。
--   メール送信はDBトランザクションと同じ原子性を持たないため、送信失敗や再送を別途設計する。
+- 旧版の記載と異なり、現在はJWT認証とユーザー／管理者の認可が実装されている。
+- 旧版のディレクトリ名・ファイル名（`*.routes.ts`、`middlewares/` 等）は現行と異なるため、本書では実ファイル名に更新した。
+- 現行スキーマには `users`、`reservations.user_id`、`reservation_slots.is_accepting`、日時重複防止インデックスがある。
+- 予約一覧は全件公開ではなく、一般ユーザーは本人の予約のみ取得する。全件閲覧は管理者APIに分離されている。
+- 旧版に記載していた「UUIDをDB問い合わせ前に検証」「すべての不正UUIDは400」「共通エラーミドルウェア」「統一エラー形式」は現行実装では保証されない。
+- 予約登録の入力検証は必須文字列の確認が中心で、メール形式や文字数の検証は行っていない。
+- 予約キャンセルに行ロックはなく、競合時の厳密な直列化は実装されていない。
+- `reservations.user_id` はNULL可のため、認証導入前の予約やユーザーに紐づかないデータが残る可能性がある。
